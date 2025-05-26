@@ -52,10 +52,7 @@ steps:
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: |
-      az aks get-credentials --resource-group $(resourceGroup) --name $(clusterName)
-      kubectl apply -f k8s/deployment.yml
-      kubectl set image deployment/hello-world-app hello-world-app=$(dockerHubUsername)/$(imageName):$(tag)
-      kubectl rollout status deployment/hello-world-app
+      kubectl get nodes
 
 - task: AzureCLI@2
   displayName: 'Get AKS Service Info'
