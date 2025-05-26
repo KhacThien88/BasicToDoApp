@@ -13,6 +13,13 @@ variables:
 
 steps:
 - script: |
+    echo "=== Docker Access Test ==="
+    whoami
+    groups
+    docker ps || { echo "Failed to access Docker. Permission denied."; exit 1; }
+  displayName: 'Test Docker Access (whoami, groups, docker ps)'
+
+- script: |
     docker --version || { echo "Docker not found. Please install Docker."; exit 1; }
     docker info || { echo "Docker daemon not running."; exit 1; }
   displayName: 'Verify Docker Installation'
