@@ -80,7 +80,7 @@ steps:
       set -e  # Exit on any error
 
       # Configuration
-      API_URL="http://backend-server.khacthienit.click/tasks"
+      API_URL="https://backend-server.khacthienit.click/tasks"
       EXPECTED_STATUS="200"
       TIMEOUT=10
       RETRY_COUNT=3
@@ -91,7 +91,7 @@ steps:
         echo "Checking health of API at $API_URL"
         for ((i=1; i<=$RETRY_COUNT; i++)); do
           echo "Attempt $i of $RETRY_COUNT"
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout $TIMEOUT "$API_URL" || echo "000")
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout $TIMEOUT --insecure "$API_URL" || echo "000")
           
           if [ "$HTTP_STATUS" == "$EXPECTED_STATUS" ]; then
             echo "Health check passed: Received HTTP $HTTP_STATUS"
