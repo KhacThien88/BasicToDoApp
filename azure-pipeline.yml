@@ -2,14 +2,21 @@ trigger:
   - main
 
 pool:
-  name: azure-devops-agent # Tên pool chứa agent
+  name: azure-devops-agent
   demands:
-    - agent.name -equals vagrant-eks-agent # Chỉ định chính xác agent
+    - agent.name -equals vagrant-eks-agent
 
 variables:
-  - group: credentials # Nhóm biến chứa thông tin như dockerHubUsername, imageName, tag, azureSubscription, resourceGroup, clusterName, dockerfilePath
+  - group: credentials
+  - name: dockerfilePath
+    value: './Dockerfile'
 
 steps:
+- script: |
+    docker --version || { echo "Docker not found. Please install Docker."; exit 1; }
+    docker info || { echo "Docker daemon not running."; exit 1; }
+  displayName: 'Verify Docker Installation'
+
 - task: Docker@2
   displayName: 'Login to Docker Hub'
   inputs:
@@ -62,7 +69,6 @@ steps:
     inlineScript: |
       echo "Waiting for the application to start..."
       sleep 30
-
       SERVICE_URL=$(kubectl get svc hello-world-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
       if [ -z "$SERVICE_URL" ]; then
         echo "Service URL not found. Checking for hostname..."
@@ -72,15 +78,12 @@ steps:
         echo "Error: Could not retrieve service URL."
         exit 1
       fi
-
       HEALTH_CHECK_URL="http://$SERVICE_URL:5000/tasks"
       echo "Checking application health at: $HEALTH_CHECK_URL"
-
       RETRY_COUNT=0
       MAX_RETRIES=3
       RETRY_DELAY=10
       SUCCESS=false
-
       while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_CHECK_URL)
         if [ "$RESPONSE" -eq 200 ]; then
@@ -93,7 +96,6 @@ steps:
           sleep $RETRY_DELAY
         fi
       done
-
       if [ "$SUCCESS" != "true" ]; then
         echo "Health check failed after $MAX_RETRIES attempts."
         exit 1
