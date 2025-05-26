@@ -2,10 +2,12 @@ trigger:
   - main
 
 pool:
-  vmImage: 'ubuntu-latest'
+  name: azure-devops-agent # Tên pool chứa agent
+  demands:
+    - agent.name -equals vagrant-eks-agent # Chỉ định chính xác agent
 
 variables:
-  - group: credentials
+  - group: credentials # Nhóm biến chứa thông tin như dockerHubUsername, imageName, tag, azureSubscription, resourceGroup, clusterName, dockerfilePath
 
 steps:
 - task: Docker@2
@@ -58,11 +60,9 @@ steps:
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: |
-      # Chờ 30 giây để đảm bảo ứng dụng đã khởi động
       echo "Waiting for the application to start..."
       sleep 30
 
-      # Lấy external IP hoặc hostname của service
       SERVICE_URL=$(kubectl get svc hello-world-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
       if [ -z "$SERVICE_URL" ]; then
         echo "Service URL not found. Checking for hostname..."
@@ -73,11 +73,9 @@ steps:
         exit 1
       fi
 
-      # Tạo URL cho endpoint GET /tasks
       HEALTH_CHECK_URL="http://$SERVICE_URL:5000/tasks"
       echo "Checking application health at: $HEALTH_CHECK_URL"
 
-      # Thực hiện health check bằng curl với retry (3 lần, mỗi lần cách nhau 10 giây)
       RETRY_COUNT=0
       MAX_RETRIES=3
       RETRY_DELAY=10
