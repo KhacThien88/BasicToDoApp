@@ -67,7 +67,7 @@ steps:
       sudo cp ~/argocd/deploy.sh .
       sudo cp ~/argocd/uninstall.sh .
       ./deploy.sh
-      kgpn todoapp-test
+      kubectl get pods -n todoapp-test
 
 - task: AzureCLI@2
   displayName: 'Health Check API using GET /tasks'
