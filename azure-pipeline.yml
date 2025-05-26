@@ -1,0 +1,102 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: credentials
+
+steps:
+- task: Docker@2
+  displayName: 'Login to Docker Hub'
+  inputs:
+    command: 'login'
+    containerRegistry: 'docker-hub-connection'
+
+- task: Docker@2
+  displayName: 'Build Docker image'
+  inputs:
+    command: 'build'
+    Dockerfile: '$(dockerfilePath)'
+    tags: '$(tag)'
+    repository: '$(dockerHubUsername)/$(imageName)'
+
+- task: Docker@2
+  displayName: 'Push Docker image to Docker Hub'
+  inputs:
+    command: 'push'
+    repository: '$(dockerHubUsername)/$(imageName)'
+    tags: '$(tag)'
+
+- task: AzureCLI@2
+  displayName: 'Deploy to AKS'
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      az aks get-credentials --resource-group $(resourceGroup) --name $(clusterName)
+      kubectl apply -f k8s/deployment.yml
+      kubectl set image deployment/hello-world-app hello-world-app=$(dockerHubUsername)/$(imageName):$(tag)
+      kubectl rollout status deployment/hello-world-app
+
+- task: AzureCLI@2
+  displayName: 'Get AKS Service Info'
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      kubectl get pods
+      kubectl get svc
+
+- task: AzureCLI@2
+  displayName: 'Health Check API using GET /tasks'
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      # Chờ 30 giây để đảm bảo ứng dụng đã khởi động
+      echo "Waiting for the application to start..."
+      sleep 30
+
+      # Lấy external IP hoặc hostname của service
+      SERVICE_URL=$(kubectl get svc hello-world-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+      if [ -z "$SERVICE_URL" ]; then
+        echo "Service URL not found. Checking for hostname..."
+        SERVICE_URL=$(kubectl get svc hello-world-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+      fi
+      if [ -z "$SERVICE_URL" ]; then
+        echo "Error: Could not retrieve service URL."
+        exit 1
+      fi
+
+      # Tạo URL cho endpoint GET /tasks
+      HEALTH_CHECK_URL="http://$SERVICE_URL:5000/tasks"
+      echo "Checking application health at: $HEALTH_CHECK_URL"
+
+      # Thực hiện health check bằng curl với retry (3 lần, mỗi lần cách nhau 10 giây)
+      RETRY_COUNT=0
+      MAX_RETRIES=3
+      RETRY_DELAY=10
+      SUCCESS=false
+
+      while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_CHECK_URL)
+        if [ "$RESPONSE" -eq 200 ]; then
+          echo "Health check passed! Application is healthy."
+          SUCCESS=true
+          break
+        else
+          echo "Health check attempt $((RETRY_COUNT + 1)) failed! HTTP status: $RESPONSE"
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+          sleep $RETRY_DELAY
+        fi
+      done
+
+      if [ "$SUCCESS" != "true" ]; then
+        echo "Health check failed after $MAX_RETRIES attempts."
+        exit 1
+      fi
