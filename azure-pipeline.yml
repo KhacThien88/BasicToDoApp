@@ -4,7 +4,7 @@ trigger:
 pool:
   name: azure-devops-agent
   demands:
-    - agent.name -equals vagrant-eks-agent
+    - agent.name -equals ec2-agent
 
 variables:
   - group: credentials
@@ -46,7 +46,7 @@ steps:
     tags: '$(tag)'
 
 - task: AzureCLI@2
-  displayName: 'Deploy to AKS'
+  displayName: 'Get AKS Service Info'
   inputs:
     azureSubscription: '$(azureSubscription)'
     scriptType: 'bash'
@@ -56,14 +56,18 @@ steps:
       kubectl get nodes
 
 - task: AzureCLI@2
-  displayName: 'Get AKS Service Info'
+  displayName: 'Deploy to AKS'
   inputs:
     azureSubscription: '$(azureSubscription)'
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: |
-      kubectl get pods
-      kubectl get svc
+      git clone https://github.com/KhacThien88/HelmMonolithic
+      cd HelmMonolithic
+      sudo cp ~/argocd/deploy.sh .
+      sudo cp ~/argocd/uninstall.sh .
+      ./deploy.sh
+      kgpn todoapp-test
 
 - task: AzureCLI@2
   displayName: 'Health Check API using GET /tasks'
@@ -72,36 +76,40 @@ steps:
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: |
-      echo "Waiting for the application to start..."
-      sleep 30
-      SERVICE_URL=$(kubectl get svc hello-world-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-      if [ -z "$SERVICE_URL" ]; then
-        echo "Service URL not found. Checking for hostname..."
-        SERVICE_URL=$(kubectl get svc hello-world-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-      fi
-      if [ -z "$SERVICE_URL" ]; then
-        echo "Error: Could not retrieve service URL."
+      #!/bin/bash
+      set -e  # Exit on any error
+
+      # Configuration
+      API_URL="http://backend-server.khacthienit.click/tasks"
+      EXPECTED_STATUS="200"
+      TIMEOUT=10
+      RETRY_COUNT=3
+      RETRY_DELAY=5
+
+      # Function to perform health check
+      health_check() {
+        echo "Checking health of API at $API_URL"
+        for ((i=1; i<=$RETRY_COUNT; i++)); do
+          echo "Attempt $i of $RETRY_COUNT"
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout $TIMEOUT "$API_URL" || echo "000")
+          
+          if [ "$HTTP_STATUS" == "$EXPECTED_STATUS" ]; then
+            echo "Health check passed: Received HTTP $HTTP_STATUS"
+            return 0
+          else
+            echo "Health check failed: Received HTTP $HTTP_STATUS (expected $EXPECTED_STATUS)"
+            if [ $i -lt $RETRY_COUNT ]; then
+              echo "Retrying in $RETRY_DELAY seconds..."
+              sleep $RETRY_DELAY
+            fi
+          fi
+        done
+        
+        echo "ERROR: Health check failed after $RETRY_COUNT attempts"
         exit 1
-      fi
-      HEALTH_CHECK_URL="http://$SERVICE_URL:5000/tasks"
-      echo "Checking application health at: $HEALTH_CHECK_URL"
-      RETRY_COUNT=0
-      MAX_RETRIES=3
-      RETRY_DELAY=10
-      SUCCESS=false
-      while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_CHECK_URL)
-        if [ "$RESPONSE" -eq 200 ]; then
-          echo "Health check passed! Application is healthy."
-          SUCCESS=true
-          break
-        else
-          echo "Health check attempt $((RETRY_COUNT + 1)) failed! HTTP status: $RESPONSE"
-          RETRY_COUNT=$((RETRY_COUNT + 1))
-          sleep $RETRY_DELAY
-        fi
-      done
-      if [ "$SUCCESS" != "true" ]; then
-        echo "Health check failed after $MAX_RETRIES attempts."
-        exit 1
-      fi
+      }
+
+      # Execute health check
+      health_check
+  condition: succeeded()
+      
