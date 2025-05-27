@@ -64,7 +64,6 @@ steps:
     inlineScript: |
       rm -rf HelmMonolithic
       git clone https://github.com/KhacThien88/HelmMonolithic
-      cd HelmMonolithic
       sudo cp ~/argocd/deploy_be.sh .
       chmod +x deploy_be.sh
       ./deploy_be.sh
