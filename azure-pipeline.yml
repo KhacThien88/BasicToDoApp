@@ -56,6 +56,17 @@ steps:
       kubectl get nodes
 
 - task: AzureCLI@2
+  displayName: 'Copy Secret mysql-root-pass to Deployment Namespace'
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      kubectl get secret mysql-root-pass -n default -o yaml | grep -v 'namespace:' | kubectl apply -n todoapp-test
+      kubectl get secret mysql-root-pass -n default -o yaml | grep -v 'namespace:' | kubectl apply -n todoapp-staging
+      kubectl get secret mysql-root-pass -n default -o yaml | grep -v 'namespace:' | kubectl apply -n todoapp-dev
+
+- task: AzureCLI@2
   displayName: 'Deploy to AKS and ArgoCD'
   inputs:
     azureSubscription: '$(azureSubscription)'
@@ -88,7 +99,8 @@ steps:
       TIMEOUT=10
       RETRY_COUNT=3
       RETRY_DELAY=5
-
+      echo "Waiting for 1 minute before starting health check..."
+      sleep 60
       # Function to perform health check
       health_check() {
         echo "Checking health of API at $API_URL"
