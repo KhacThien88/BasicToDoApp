@@ -56,17 +56,6 @@ steps:
       kubectl get nodes
 
 - task: AzureCLI@2
-  displayName: 'Copy Secret mysql-root-pass to Deployment Namespace'
-  inputs:
-    azureSubscription: '$(azureSubscription)'
-    scriptType: 'bash'
-    scriptLocation: 'inlineScript'
-    inlineScript: |
-      kubectl get secret mysql-root-pass -n default -o yaml | grep -v 'namespace:' | kubectl apply -n todoapp-test
-      kubectl get secret mysql-root-pass -n default -o yaml | grep -v 'namespace:' | kubectl apply -n todoapp-staging
-      kubectl get secret mysql-root-pass -n default -o yaml | grep -v 'namespace:' | kubectl apply -n todoapp-dev
-
-- task: AzureCLI@2
   displayName: 'Deploy to AKS and ArgoCD'
   inputs:
     azureSubscription: '$(azureSubscription)'
@@ -75,15 +64,23 @@ steps:
     inlineScript: |
       rm -rf HelmMonolithic
       git clone https://github.com/KhacThien88/HelmMonolithic
-      sudo cp ~/argocd/deploy_be.sh .
-      chmod +x deploy_be.sh
-      ./deploy_be.sh
-      # Apply the manifests from the correct paths
+      chmod +x HelmMonolithic/deploy_be.sh
+      bash HelmMonolithic/deploy_be.sh
       kubectl apply -f HelmMonolithic/argocd/dev/backend-server.yml
       kubectl apply -f HelmMonolithic/argocd/dev/frontend-server.yml
       kubectl apply -f HelmMonolithic/argocd/staging/backend-server.yml
       kubectl apply -f HelmMonolithic/argocd/staging/frontend-server.yml
       kubectl get pods -n todoapp-test
+
+- task: AzureCLI@2
+  displayName: 'Copy Secret mysql-root-pass to Deployment Namespace'
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      chmod +x HelmMonolithic/copy-secret.sh
+      bash HelmMonolithic/copy-secret.sh
 
 - task: AzureCLI@2
   displayName: 'Health Check API using GET /tasks'
