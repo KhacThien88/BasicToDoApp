@@ -75,20 +75,6 @@ steps:
       kubectl get pods -n todoapp-test
 
 - task: AzureCLI@2
-  displayName: 'Deploy to ArgoCD'
-  inputs:
-    azureSubscription: '$(azureSubscription)'
-    scriptType: 'bash'
-    scriptLocation: 'inlineScript'
-    inlineScript: |
-      cd Charts/argocd/dev
-      kubectl apply -f backend-server.yml
-      kubectl apply -f frontend-server.yml
-      cd ../staging
-      kubectl apply -f backend-server.yml
-      kubectl apply -f frontend-server.yml
-
-- task: AzureCLI@2
   displayName: 'Health Check API using GET /tasks'
   inputs:
     azureSubscription: '$(azureSubscription)'
