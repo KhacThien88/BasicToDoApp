@@ -56,7 +56,7 @@ steps:
       kubectl get nodes
 
 - task: AzureCLI@2
-  displayName: 'Deploy to AKS'
+  displayName: 'Deploy to AKS and ArgoCD'
   inputs:
     azureSubscription: '$(azureSubscription)'
     scriptType: 'bash'
@@ -68,6 +68,10 @@ steps:
       sudo cp ~/argocd/deploy_be.sh .
       sudo cp ~/argocd/uninstall.sh .
       ./deploy.sh
+      kubectl apply -f Charts/argocd/dev/backend-server.yml
+      kubectl apply -f Charts/argocd/dev/frontend-server.yml
+      kubectl apply -f Charts/argocd/staging/backend-server.yml
+      kubectl apply -f Charts/argocd/staging/frontend-server.yml
       kubectl get pods -n todoapp-test
 
 - task: AzureCLI@2
