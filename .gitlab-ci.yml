@@ -1,0 +1,133 @@
+image: docker:stable
+services:
+  - docker:dind
+
+variables:
+  DOCKERFILE_PATH: "./Dockerfile"
+  DOCKER_HUB_USERNAME: "$DOCKER_HUB_USERNAME"
+  IMAGE_NAME: "$IMAGE_NAME"
+  TAG: "$CI_COMMIT_SHA"
+  RESOURCE_GROUP: "$RESOURCE_GROUP"
+  CLUSTER_NAME: "$CLUSTER_NAME"
+  API_URL: "https://backend-server.khacthienit.click/tasks"
+  EXPECTED_STATUS: "200"
+  TIMEOUT: "10"
+  RETRY_COUNT: "3"
+  RETRY_DELAY: "5"
+
+before_script:
+  - apk add --no-cache curl jq bash git
+  - curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+stages:
+  - test
+  - build
+  - deploy
+  - healthcheck
+
+test_docker_access:
+  stage: test
+  tags:
+    - docker
+  script:
+    - echo "=== Docker Access Test ==="
+    - whoami
+    - groups
+    - docker ps || { echo "Failed to access Docker. Permission denied."; exit 1; }
+  allow_failure: false
+
+verify_docker_installation:
+  stage: test
+  tags:
+    - docker
+  script:
+    - docker --version || { echo "Docker not found. Please install Docker."; exit 1; }
+    - docker info || { echo "Docker daemon not running."; exit 1; }
+  allow_failure: false
+
+login_docker_hub:
+  stage: build
+  tags:
+    - docker
+  script:
+    - echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
+  allow_failure: false
+
+build_docker_image:
+  stage: build
+  tags:
+    - docker
+  script:
+    - docker build -f $DOCKERFILE_PATH -t $DOCKER_HUB_USERNAME/$IMAGE_NAME:$TAG .
+  allow_failure: false
+
+push_docker_image:
+  stage: deploy
+  tags:
+    - docker
+  script:
+    - docker push $DOCKER_HUB_USERNAME/$IMAGE_NAME:$TAG
+  allow_failure: false
+
+get_aks_info:
+  stage: deploy
+  tags:
+    - docker
+  script:
+    - kubectl get nodes
+  allow_failure: false
+
+deploy_to_aks:
+  stage: deploy
+  tags:
+    - docker
+  script:
+    - rm -rf HelmMonolithic
+    - git clone https://github.com/KhacThien88/HelmMonolithic
+    - chmod +x HelmMonolithic/deploy_be.sh
+    - bash HelmMonolithic/deploy_be.sh
+    - kubectl get pods -n todoapp-test
+  allow_failure: false
+
+copy_secret:
+  stage: deploy
+  tags:
+    - docker
+  script:
+    - chmod +x HelmMonolithic/copy-secret.sh
+    - bash HelmMonolithic/copy-secret.sh
+  allow_failure: false
+
+health_check:
+  stage: healthcheck
+  tags:
+    - docker
+  script:
+    - echo "Waiting for 1 minute before starting health check..."
+    - sleep 60
+    - |
+      #!/bin/bash
+      set -e
+      health_check() {
+        echo "Checking health of API at $API_URL"
+        for ((i=1; i<=$RETRY_COUNT; i++)); do
+          echo "Attempt $i of $RETRY_COUNT"
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout $TIMEOUT --insecure "$API_URL" || echo "Can't get status")
+          
+          if [ "$HTTP_STATUS" == "$EXPECTED_STATUS" ]; then
+            echo "Health check passed: Received HTTP $HTTP_STATUS"
+            return 0
+          else
+            echo "Health check failed: Received HTTP $HTTP_STATUS (expected $EXPECTED_STATUS)"
+            if [ $i -lt $RETRY_COUNT ]; then
+              echo "Retrying in $RETRY_DELAY seconds..."
+              sleep $RETRY_DELAY
+            fi
+          fi
+        done
+        
+        echo "ERROR: Health check failed after $RETRY_COUNT attempts"
+        exit 1
+      }
+      health_check
+  when: on_success
